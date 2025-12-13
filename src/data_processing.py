@@ -1,8 +1,8 @@
 import pandas as pd, numpy as np
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.pipeline import Pipeline
-from sklearn.compose import ColumnTransformer
-from sklearn.preprocessing import OneHotEncoder, StandardScaler
+from sklearn.preprocessing import StandardScaler
+from sklearn.cluster import KMeans
 from xverse.transformer import WOE
 
 # ---------- transformers ----------
@@ -42,9 +42,15 @@ def build_rfm_pipeline(snapshot_date):
         ('rfm', RFM(snapshot_date))
     ])
 
+def create_proxy_target(rfm_df, random_state=42):
+    rfm = rfm_df[['days_since_last','frequency','monetary']].fillna(0)
+    rfm_scaled = StandardScaler().fit_transform(rfm)
+    km = KMeans(n_clusters=3, random_state=random_state, n_init=10).fit(rfm_scaled)
+    rfm_df['cluster'] = km.labels_
+    rfm_df['is_high_risk'] = (rfm_df['cluster'] == 0).astype(int)
+    return rfm_df
 
 if __name__ == "__main__":
-
     # 1. Load raw data
     df = pd.read_csv(
         "D:/kifiya AI/credit-risk-model/data/raw/data.csv",
@@ -57,15 +63,22 @@ if __name__ == "__main__":
     # 3. Build pipeline
     rfm_pipeline = build_rfm_pipeline(snapshot_date)
 
-    # 4. Run pipeline → THIS creates the DataFrame
+    # 4. Run pipeline
     rfm_df = rfm_pipeline.fit_transform(df)
 
-    # 5. Save processed features
+    # 5. Create proxy target labels
+    labeled_df = create_proxy_target(rfm_df)
+    print("High-risk rate:", labeled_df["is_high_risk"].mean())
+
+    # 6. Save processed features and labeled data
     rfm_df.to_parquet(
-        "data/processed/rfm_features.parquet",
+        "D:/kifiya AI/credit-risk-model/data/processed/rfm_features.parquet",
+        index=False
+    )
+    labeled_df.to_parquet(
+        "D:/kifiya AI/credit-risk-model/data/processed/train_labeled.parquet",
         index=False
     )
 
     print("RFM features saved successfully")
-
-
+    print("Labeled training data saved")
